@@ -1,70 +1,26 @@
-import * as THREE from 'three';
-import { World } from './core/World';
-import { Player } from './entities/Player';
+import { Game } from './Game';
 
-class Game {
-    private scene: THREE.Scene;
-    private camera: THREE.PerspectiveCamera;
-    private renderer: THREE.WebGLRenderer;
-    private world: World;
-    private player: Player;
-    private lastTime: number = 0;
-
-    constructor() {
-        // Initialize scene
-        this.scene = new THREE.Scene();
-
-        // Initialize camera
-        this.camera = new THREE.PerspectiveCamera(
-            75,
-            window.innerWidth / window.innerHeight,
-            0.1,
-            1000
-        );
-
-        // Initialize renderer
-        this.renderer = new THREE.WebGLRenderer({ antialias: true });
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        document.body.appendChild(this.renderer.domElement);
-
-        // Initialize world
-        this.world = new World(this.scene);
-
-        // Create player
-        this.player = new Player(this.scene, this.camera, this.world.getPhysicsWorld());
-
-        // Handle window resize
-        window.addEventListener('resize', this.onWindowResize.bind(this));
-
-        // Start game loop
-        this.animate();
+// Start the game when the DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('Starting game initialization...');
+    try {
+        const game = new Game();
+        console.log('Game initialized successfully');
+    } catch (error: any) {
+        console.error('Failed to initialize game:', error);
+        // Display error to user
+        const errorDiv = document.createElement('div');
+        errorDiv.style.position = 'fixed';
+        errorDiv.style.top = '50%';
+        errorDiv.style.left = '50%';
+        errorDiv.style.transform = 'translate(-50%, -50%)';
+        errorDiv.style.color = 'white';
+        errorDiv.style.backgroundColor = 'rgba(255, 0, 0, 0.8)';
+        errorDiv.style.padding = '20px';
+        errorDiv.style.borderRadius = '5px';
+        errorDiv.style.fontFamily = 'Arial, sans-serif';
+        errorDiv.style.zIndex = '9999';
+        errorDiv.textContent = `Failed to initialize game: ${error.message}`;
+        document.body.appendChild(errorDiv);
     }
-
-    private onWindowResize(): void {
-        this.camera.aspect = window.innerWidth / window.innerHeight;
-        this.camera.updateProjectionMatrix();
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-    }
-
-    private animate(): void {
-        requestAnimationFrame(this.animate.bind(this));
-
-        const currentTime = performance.now();
-        const deltaTime = (currentTime - this.lastTime) / 1000;
-        this.lastTime = currentTime;
-
-        // Update world
-        this.world.update(deltaTime);
-
-        // Update player
-        this.player.update();
-
-        // Render scene
-        this.renderer.render(this.scene, this.camera);
-    }
-}
-
-// Start the game
-new Game(); 
+}); 

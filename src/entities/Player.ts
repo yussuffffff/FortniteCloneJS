@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { GLTFLoader, GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { AnimationMixer, AnimationAction, AnimationClip } from 'three';
+import { World } from '../core/World';
 
 enum WeaponType {
     PICKAXE = 'pickaxe',
@@ -31,6 +32,7 @@ export class Player {
         right: false
     };
     private physicsWorld: CANNON.World;
+    private world: World;
     private yawObject: THREE.Object3D;
     private pitchObject: THREE.Object3D;
     private maxVelocity: number = 20;
@@ -46,10 +48,43 @@ export class Player {
     private isSwinging: boolean = false;
     private weaponSlots: HTMLDivElement[] = [];
 
-    constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera, physicsWorld: CANNON.World) {
+    constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera, physicsWorld: CANNON.World, world: World) {
+        console.log('Player constructor called with:', {
+            hasScene: !!scene,
+            hasCamera: !!camera,
+            hasPhysicsWorld: !!physicsWorld,
+            hasWorld: !!world,
+            worldType: world?.constructor?.name
+        });
+
+        // Validate all required parameters
+        if (!scene) {
+            throw new Error('Scene is required for Player initialization');
+        }
+        if (!camera) {
+            throw new Error('Camera is required for Player initialization');
+        }
+        if (!physicsWorld) {
+            throw new Error('PhysicsWorld is required for Player initialization');
+        }
+        if (!world) {
+            throw new Error('World instance is required for Player initialization');
+        }
+        if (!world.getPhysicsWorld) {
+            throw new Error('World instance is missing getPhysicsWorld method');
+        }
+
         this.scene = scene;
         this.camera = camera;
         this.physicsWorld = physicsWorld;
+        this.world = world;
+
+        console.log('Player constructor - World instance initialized:', {
+            hasWorld: !!this.world,
+            worldMethods: Object.keys(this.world),
+            worldProperties: Object.getOwnPropertyNames(this.world),
+            worldPrototype: Object.getOwnPropertyNames(Object.getPrototypeOf(this.world))
+        });
 
         // Create camera rig for rotation
         this.pitchObject = new THREE.Object3D();
@@ -105,7 +140,8 @@ export class Player {
         this.crosshair = this.createCrosshair();
         document.body.appendChild(this.crosshair);
 
-        // Create weapon slots UI
+        // Create UI elements
+        this.createWoodUI(); // Create wood counter first
         this.createWeaponSlotsUI();
 
         // Initialize controls
@@ -143,6 +179,32 @@ export class Player {
         crosshair.appendChild(createLine(false));
         
         return crosshair;
+    }
+
+    private createWoodUI(): void {
+        const woodCountElement = document.createElement('div');
+        woodCountElement.id = 'woodCount';
+        woodCountElement.style.position = 'fixed';
+        woodCountElement.style.bottom = '120px';
+        woodCountElement.style.right = '20px';
+        woodCountElement.style.color = 'white';
+        woodCountElement.style.fontSize = '24px';
+        woodCountElement.style.fontFamily = 'Arial, sans-serif';
+        woodCountElement.style.textShadow = '2px 2px 2px rgba(0,0,0,0.5)';
+        woodCountElement.style.padding = '10px';
+        woodCountElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        woodCountElement.style.borderRadius = '5px';
+        woodCountElement.style.zIndex = '1000';
+        woodCountElement.textContent = `Wood: ${this.wood}`;
+        document.body.appendChild(woodCountElement);
+    }
+
+    private updateWoodUI(): void {
+        const woodCountElement = document.getElementById('woodCount');
+        if (woodCountElement) {
+            woodCountElement.textContent = `Wood: ${this.wood}`;
+            console.log('Updated wood count UI:', this.wood);
+        }
     }
 
     private createWeaponSlotsUI(): void {
@@ -192,7 +254,7 @@ export class Player {
             if (i === 0) {
                 icon.style.backgroundImage = "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path fill=\"white\" d=\"M14.5 9.5L19 5l-1-1-3.5 3.5-1-1L15 5l-1-1-3.5 3.5-1-1L11 5 10 4 5.5 8.5l1 1L8 8l1 1-1.5 1.5 1 1L10 10l1 1-1.5 1.5 1 1L12 12l1 1-4.5 4.5 1 1L15 13l-1.5-1.5 1-1z\"/></svg>')";
             } else {
-                icon.style.backgroundImage = "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path fill=\"white\" d=\"M21 9L17 5V8H10V10H17V13M7 11L3 15L7 19V16H14V14H7V11Z\"/><path fill=\"white\" d=\"M22 6.92L20.59 5.5L17.74 8.72C15.68 6.4 12.83 5 9.61 5C6.72 5 4.07 6.16 2 8L3.42 9.42C5.12 7.93 7.27 7 9.61 7C12.35 7 14.7 8.26 16.38 10.24L13.5 13.5L17.5 17.5L21 14V6.92Z\"/></svg>')";
+                icon.style.backgroundImage = "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path fill=\"white\" d=\"M21 9L17 5V8H10V10H17V13M7 11L3 15L7 19V16H14V14H7V11Z\"/></svg>')";
             }
             
             slot.appendChild(icon);
@@ -358,68 +420,115 @@ export class Player {
     }
 
     private swingPickaxe(): void {
-        const startRotation = {
-            x: this.pickaxeModel.rotation.x,
-            y: this.pickaxeModel.rotation.y,
-            z: this.pickaxeModel.rotation.z
-        };
-        const startPosition = {
-            x: this.pickaxeModel.position.x,
-            y: this.pickaxeModel.position.y,
-            z: this.pickaxeModel.position.z
-        };
-        const swingDuration = 400; // ms
-        const startTime = Date.now();
-
-        // Prevent multiple swings
         if (this.isSwinging) return;
         this.isSwinging = true;
+
+        const initialRotation = this.pickaxeModel.rotation.clone();
+        const swingDuration = 500;
+        const startTime = Date.now();
+
+        const debugGeometry = new THREE.BufferGeometry();
+        const debugMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
+        const debugLine = new THREE.Line(debugGeometry, debugMaterial);
+        this.scene.add(debugLine);
 
         const animate = () => {
             const elapsed = Date.now() - startTime;
             const progress = Math.min(1, elapsed / swingDuration);
-            
-            // Create a centered cross-diagonal pattern
-            if (progress < 0.25) {
-                // First diagonal: top right to bottom left
-                const subProgress = progress * 4;
-                this.pickaxeModel.rotation.x = startRotation.x + (subProgress * Math.PI / 4);
-                this.pickaxeModel.rotation.z = startRotation.z - (subProgress * Math.PI / 4);
-            } else if (progress < 0.5) {
-                // Return to center
-                const subProgress = (progress - 0.25) * 4;
-                this.pickaxeModel.rotation.x = startRotation.x + Math.PI / 4 - (subProgress * Math.PI / 4);
-                this.pickaxeModel.rotation.z = startRotation.z - Math.PI / 4 + (subProgress * Math.PI / 4);
-            } else if (progress < 0.75) {
-                // Second diagonal: top left to bottom right
-                const subProgress = (progress - 0.5) * 4;
-                this.pickaxeModel.rotation.x = startRotation.x - (subProgress * Math.PI / 4);
-                this.pickaxeModel.rotation.z = startRotation.z - (subProgress * Math.PI / 4);
-            } else {
-                // Return to starting position
-                const subProgress = (progress - 0.75) * 4;
-                this.pickaxeModel.rotation.x = startRotation.x - Math.PI / 4 + (subProgress * Math.PI / 4);
-                this.pickaxeModel.rotation.z = startRotation.z - Math.PI / 4 + (subProgress * Math.PI / 4);
+            const swingAngle = Math.sin(progress * Math.PI) * Math.PI / 2;
+            this.pickaxeModel.rotation.x = initialRotation.x + swingAngle;
+
+            // Widen the hit detection window slightly
+            if (progress >= 0.45 && progress <= 0.60) {
+                const raycaster = new THREE.Raycaster();
+                const cameraDirection = new THREE.Vector3();
+                this.camera.getWorldDirection(cameraDirection);
+                const cameraPosition = new THREE.Vector3();
+                this.camera.getWorldPosition(cameraPosition);
+
+                // Reset strike range to a more standard value for debugging
+                const strikeRange = 5; // Standard FPS interaction range
+                raycaster.set(cameraPosition, cameraDirection);
+                raycaster.far = strikeRange;
+
+                const linePoints = [
+                    cameraPosition,
+                    cameraPosition.clone().add(cameraDirection.multiplyScalar(strikeRange))
+                ];
+                debugGeometry.setFromPoints(linePoints);
+
+                // Get the trees group from the world
+                const treesGroup = this.world.getTreesGroup();
+                if (!treesGroup) {
+                    console.error("Could not get trees group from world!");
+                    return; // Exit if we can't get the trees
+                }
+
+                // Target the raycast specifically at the trees
+                const intersects = raycaster.intersectObjects(treesGroup.children, true);
+                
+                console.log(`Raycast check: Found ${intersects.length} intersections with treesGroup within ${strikeRange} units.`);
+                
+                let hasHit = false;
+                for (const intersect of intersects) {
+                    // Log every intersection found with the trees group within the range
+                    console.log('Intersection details:', {
+                        distance: intersect.distance,
+                        objectName: intersect.object.name,
+                        objectUserData: intersect.object.userData,
+                        isTreePart: intersect.object.userData?.isTreePart,
+                        parentIsTree: intersect.object.parent?.userData?.isTree,
+                        point: intersect.point
+                    });
+
+                    // Check distance again (though raycaster.far should handle this)
+                    if (intersect.distance > strikeRange) continue;
+                    
+                    if (!intersect.object.userData) {
+                        continue;
+                    }
+
+                    let current = intersect.object;
+                    let treeGroup = null;
+                    while (current && !treeGroup) {
+                        if (current.userData.isTree) {
+                            treeGroup = current;
+                            break;
+                        }
+                        if (!current.parent) break;
+                        current = current.parent;
+                    }
+
+                    if (treeGroup && intersect.object.userData.isTreePart) {
+                        console.log('Confirmed hit on tree part at distance:', intersect.distance);
+                        hasHit = true;
+                        try {
+                            const woodAmount = this.world.handleTreeHit(treeGroup, intersect.point);
+                            console.log('Got wood amount:', woodAmount);
+                            const newWoodAmount = Math.min(this.wood + woodAmount, 500);
+                            if (newWoodAmount > this.wood) {
+                                this.wood = newWoodAmount;
+                                this.updateWoodUI();
+                                console.log('Wood count updated to:', this.wood);
+                            }
+                        } catch (error) {
+                            console.error('Error handling tree hit:', error);
+                        }
+                        break; // Process only the first valid hit
+                    }
+                }
             }
-            
-            // Add forward thrust during the swing
-            this.pickaxeModel.position.z = startPosition.z - Math.sin(progress * Math.PI) * 0.2;
-            
+
             if (progress < 1) {
                 requestAnimationFrame(animate);
             } else {
-                // Reset position and rotation
-                this.pickaxeModel.position.x = startPosition.x;
-                this.pickaxeModel.position.y = startPosition.y;
-                this.pickaxeModel.position.z = startPosition.z;
-                this.pickaxeModel.rotation.x = startRotation.x;
-                this.pickaxeModel.rotation.y = startRotation.y;
-                this.pickaxeModel.rotation.z = startRotation.z;
+                this.pickaxeModel.rotation.copy(initialRotation);
                 this.isSwinging = false;
+                this.scene.remove(debugLine);
             }
         };
 
-        animate();
+        requestAnimationFrame(animate);
     }
 
     private shoot(): void {

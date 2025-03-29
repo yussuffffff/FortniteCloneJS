@@ -2,11 +2,17 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { createNoise2D } from 'simplex-noise';
 
+interface TreeData {
+    health: number;
+    physicsBody: CANNON.Body;
+}
+
 export class World {
     private scene: THREE.Scene;
     private physicsWorld: CANNON.World;
     private terrain!: THREE.Mesh;
     private trees: THREE.Group;
+    private treeData: Map<THREE.Object3D, TreeData> = new Map();
     private noise2D: (x: number, y: number) => number;
     private skyMesh!: THREE.Mesh;
     private sunLight!: THREE.DirectionalLight;
@@ -52,74 +58,68 @@ export class World {
             return;
         }
 
-        // Create gradient with smoother color transitions
+        // Create gradient closer to Fortnite's style (brighter blue, soft horizon)
         const gradient = context.createLinearGradient(0, 0, 0, canvas.height);
-        gradient.addColorStop(0, '#4B91E2');    // Top - bright blue
-        gradient.addColorStop(0.4, '#87CEEB');  // Upper middle - sky blue
-        gradient.addColorStop(0.7, '#B7E1F3');  // Lower middle - light blue
-        gradient.addColorStop(0.9, '#E0F2F7');  // Near horizon - very light blue
-        gradient.addColorStop(1, '#FFFFFF');    // Horizon - white
+        gradient.addColorStop(0, '#00A1FF');    // Bright Sky Blue at the top
+        gradient.addColorStop(0.6, '#87CEEB');  // Lighter Sky Blue towards middle
+        gradient.addColorStop(0.9, '#E0F8FF');  // Very Light Blue/Cyan near horizon
+        gradient.addColorStop(1, '#FFFFFF');    // White/Slightly Yellowish at the horizon (optional: use #FFFFAA for slight yellow)
 
         // Fill the canvas with the gradient
         context.fillStyle = gradient;
         context.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Debug: Log canvas data to verify gradient
-        console.log('Sky canvas created with dimensions:', canvas.width, 'x', canvas.height);
-
         // Create and configure the sky texture
         const skyTexture = new THREE.CanvasTexture(canvas);
-        skyTexture.wrapS = THREE.ClampToEdgeWrapping;
-        skyTexture.wrapT = THREE.ClampToEdgeWrapping;
-        skyTexture.needsUpdate = true;
+        skyTexture.needsUpdate = true; // Ensure texture updates
 
-        // Create sky material with debugging color
+        // *** DEBUG: Use a simple bright color material instead of the texture *** --> Reverting to original
         const skyMaterial = new THREE.MeshBasicMaterial({
-            map: skyTexture,
-            side: THREE.BackSide,
-            fog: false,
-            depthWrite: false,
-            color: 0xFFFFFF,  // White base color to ensure texture visibility
-            transparent: false
+            map: skyTexture, // Use the generated gradient texture
+            // color: 0xff0000, // Bright Red - REMOVED FOR DEBUG
+            side: THREE.BackSide, // Render on the inside
+            fog: false, // Sky shouldn't be affected by fog
+            depthWrite: false // Render behind everything else
         });
+        // console.log('DEBUG: Using simple RED material for sky sphere.'); // REMOVED FOR DEBUG
 
-        // Create larger sky sphere to ensure camera is always inside
-        const skyGeometry = new THREE.SphereGeometry(5000, 60, 40);
+        // Create larger sky sphere 
+        const skyGeometry = new THREE.SphereGeometry(5000, 32, 15);
         this.skyMesh = new THREE.Mesh(skyGeometry, skyMaterial);
+        this.skyMesh.position.set(0, 0, 0); // Ensure it's centered
+        this.skyMesh.renderOrder = -1000; // Render first
         
-        // Reset rotation and position
-        this.skyMesh.rotation.set(0, 0, 0);
-        this.skyMesh.position.set(0, 0, 0);
-        
-        // Ensure sky renders first
-        this.skyMesh.renderOrder = -1000;
-        
-        // Add to scene
+        // --- Add detailed logging before adding to scene --- // REMOVING DEBUG LOGS
+        // console.log('DEBUG: skyMesh object created:', {
+        //     uuid: this.skyMesh.uuid,
+        //     type: this.skyMesh.type,
+        //     geometry_type: this.skyMesh.geometry?.type,
+        //     material_type: (this.skyMesh.material as THREE.Material)?.type,
+        //     material_color: (this.skyMesh.material as THREE.MeshBasicMaterial)?.color?.getHexString(),
+        //     position: this.skyMesh.position,
+        //     renderOrder: this.skyMesh.renderOrder,
+        //     visible: this.skyMesh.visible
+        // });
+        // 
+        // console.log('DEBUG: Attempting to add skyMesh to the scene...');
         this.scene.add(this.skyMesh);
+        // console.log('DEBUG: skyMesh *should* be added to the scene.', this.scene.children.includes(this.skyMesh) ? 'Confirmed in children array.' : 'NOT FOUND in children array!');
 
-        // Clear scene background
+        // Ensure scene background is null to see the sky sphere
+        // console.log('DEBUG: Setting scene.background to null.'); // REMOVING DEBUG LOG
         this.scene.background = null;
+        // console.log('DEBUG: scene.background is now:', this.scene.background); // REMOVING DEBUG LOG
 
-        // Debug: Log sky mesh creation
-        console.log('Sky mesh created and added to scene', {
-            geometry: skyGeometry.parameters,
-            material: skyMaterial,
-            position: this.skyMesh.position,
-            renderOrder: this.skyMesh.renderOrder
-        });
+        // --- Lighting Adjustments --- 
 
-        // Create sun with glow effect
+        // Keep existing sun visualization (adjust position slightly if needed)
         const sunGeometry = new THREE.SphereGeometry(40, 32, 32);
-        const sunMaterial = new THREE.MeshBasicMaterial({
-            color: 0xffff80,
-            transparent: true,
-            opacity: 0.8
-        });
+        const sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffff80 });
         const sun = new THREE.Mesh(sunGeometry, sunMaterial);
-        sun.position.set(200, 400, -300);
+        sun.position.set(200, 300, -400); // Adjusted sun position slightly
         this.scene.add(sun);
 
-        // Add sun glow
+        // Keep sun glow
         const sunGlowGeometry = new THREE.SphereGeometry(55, 32, 32);
         const sunGlowMaterial = new THREE.MeshBasicMaterial({
             color: 0xffff80,
@@ -130,31 +130,34 @@ export class World {
         sunGlow.position.copy(sun.position);
         this.scene.add(sunGlow);
 
-        // Add main directional light (sun)
-        this.sunLight = new THREE.DirectionalLight(0xfffaf0, 1.2);
+        // Adjust main directional light (sun) - Increase intensity slightly
+        this.sunLight = new THREE.DirectionalLight(0xfffaf0, 1.5); // Increased intensity from 1.2 to 1.5
         this.sunLight.position.copy(sun.position);
         this.sunLight.castShadow = true;
 
-        // Configure shadow properties
-        this.sunLight.shadow.mapSize.width = 4096;
-        this.sunLight.shadow.mapSize.height = 4096;
+        // Keep shadow properties (adjust if shadows look wrong)
+        this.sunLight.shadow.mapSize.width = 2048; // Can reduce from 4096 for performance
+        this.sunLight.shadow.mapSize.height = 2048;
         this.sunLight.shadow.camera.near = 0.5;
-        this.sunLight.shadow.camera.far = 1500;
+        this.sunLight.shadow.camera.far = 1000; // Reduced far plane slightly
         this.sunLight.shadow.camera.left = -500;
         this.sunLight.shadow.camera.right = 500;
         this.sunLight.shadow.camera.top = 500;
         this.sunLight.shadow.camera.bottom = -500;
-        this.sunLight.shadow.bias = -0.0005;
-        this.sunLight.shadow.normalBias = 0.02;
+        this.sunLight.shadow.bias = -0.001; // Adjusted bias slightly
+        // this.sunLight.shadow.normalBias = 0.02; // Keep or adjust normal bias if needed
 
         this.scene.add(this.sunLight);
 
-        // Add ambient lighting
-        const hemiLight = new THREE.HemisphereLight(0xffffff, 0xffffff, 0.6);
+        // Adjust Hemisphere Light - More balanced top/bottom light
+        const hemiLight = new THREE.HemisphereLight(0xB1E1FF, 0xB97A20, 0.8); // Sky color, Ground color, Intensity increased to 0.8
         this.scene.add(hemiLight);
 
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        // Adjust Ambient Light - Increase intensity for overall brightness
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // Increased intensity from 0.4 to 0.6
         this.scene.add(ambientLight);
+        
+        console.log('Sky and lighting updated.');
     }
 
     private createTerrain(): void {
@@ -236,119 +239,56 @@ export class World {
     }
 
     private createTrees(): void {
-        // Create tree geometries with better detail
-        const trunkGeometry = new THREE.CylinderGeometry(0.4, 0.5, 4, 8);
-        const trunkMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x8B4513,
-            roughness: 0.8,
-            metalness: 0.2
-        });
+        // Create tree instances with physics and health tracking
+        const treeCount = 50;
+        const treeGeometry = new THREE.CylinderGeometry(0.5, 0.8, 8, 8);
+        const treeMaterial = new THREE.MeshStandardMaterial({ color: 0x4a2810 });
+        const leafGeometry = new THREE.SphereGeometry(2, 8, 8);
+        const leafMaterial = new THREE.MeshStandardMaterial({ color: 0x0f5f13 });
 
-        // Create canopy using multiple spheres for a fuller look
-        const canopyGeometry = new THREE.SphereGeometry(1.5, 12, 12);
-        const canopyMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x2d5a27,  // Darker green
-            roughness: 0.8,
-            metalness: 0.1
-        });
-
-        // Create small branch geometry
-        const branchGeometry = new THREE.CylinderGeometry(0.2, 0.2, 1, 5);
-
-        // Create more trees with better distribution
-        const numTrees = 300;  // Increased from 100 to 300
-        const minRadius = 50;   // Minimum distance from center
-        const maxRadius = 450;  // Maximum distance from center
-        const gridSize = Math.ceil(Math.sqrt(numTrees));
-        
-        for (let i = 0; i < numTrees; i++) {
+        for (let i = 0; i < treeCount; i++) {
             const treeGroup = new THREE.Group();
-            treeGroup.userData.isTree = true;
             
-            // Create trunk with slight random variation
-            const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+            // Create tree trunk
+            const trunk = new THREE.Mesh(treeGeometry, treeMaterial);
             trunk.castShadow = true;
-            trunk.receiveShadow = true;
-            trunk.position.y = 2;
-            trunk.rotation.y = Math.random() * Math.PI;
+            trunk.position.y = 4;
+            trunk.userData.isTreePart = true; // Mark as part of a tree
             treeGroup.add(trunk);
 
-            // Create main canopy spheres
-            const canopyGroup = new THREE.Group();
-            canopyGroup.position.y = 5;
+            // Create tree leaves
+            const leaves = new THREE.Mesh(leafGeometry, leafMaterial);
+            leaves.castShadow = true;
+            leaves.position.y = 8;
+            leaves.userData.isTreePart = true; // Mark as part of a tree
+            treeGroup.add(leaves);
 
-            // Add multiple spheres for fuller canopy
-            const numCanopySpheres = Math.floor(Math.random() * 3) + 4; // 4-6 spheres
-            for (let j = 0; j < numCanopySpheres; j++) {
-                const canopy = new THREE.Mesh(canopyGeometry, canopyMaterial);
-                canopy.castShadow = true;
-                canopy.receiveShadow = true;
-                
-                // Position spheres with more variation
-                canopy.position.set(
-                    (Math.random() - 0.5) * 1.2,
-                    (Math.random() - 0.5) * 1.0,
-                    (Math.random() - 0.5) * 1.2
-                );
-                
-                // Random scaling for variety
-                const scale = 0.7 + Math.random() * 0.6;
-                canopy.scale.set(scale, scale * 0.9, scale);
-                
-                canopyGroup.add(canopy);
-            }
-            
-            // Add small branches
-            const numBranches = Math.floor(Math.random() * 3) + 3; // 3-5 branches
-            for (let k = 0; k < numBranches; k++) {
-                const branch = new THREE.Mesh(branchGeometry, trunkMaterial);
-                branch.castShadow = true;
-                branch.position.y = 2.5 + k * 0.6;
-                branch.rotation.z = (Math.random() - 0.5) * Math.PI * 0.6;
-                branch.rotation.y = k * (Math.PI * 2 / numBranches);
-                branch.position.x = Math.cos(k * (Math.PI * 2 / numBranches)) * 0.8;
-                branch.position.z = Math.sin(k * (Math.PI * 2 / numBranches)) * 0.8;
-                treeGroup.add(branch);
-            }
+            // Random position
+            const x = (Math.random() - 0.5) * 200;
+            const z = (Math.random() - 0.5) * 200;
+            const y = this.sampleTerrainHeight(x, z);
+            treeGroup.position.set(x, y, z);
 
-            treeGroup.add(canopyGroup);
-            
-            // Position trees in a more natural pattern
-            let radius, angle;
-            if (i < numTrees * 0.7) {  // 70% of trees in clusters
-                // Create clusters of trees
-                const clusterCenter = Math.floor(i / 5);  // 5 trees per cluster
-                const baseRadius = minRadius + (maxRadius - minRadius) * (Math.random() * 0.8 + 0.2);
-                const baseAngle = (clusterCenter / (numTrees * 0.14)) * Math.PI * 2;
-                
-                radius = baseRadius + (Math.random() - 0.5) * 40;  // Spread within cluster
-                angle = baseAngle + (Math.random() - 0.5) * 0.5;   // Angular spread within cluster
-            } else {
-                // Remaining trees randomly distributed
-                radius = minRadius + Math.random() * (maxRadius - minRadius);
-                angle = Math.random() * Math.PI * 2;
-            }
-            
-            treeGroup.position.x = Math.cos(angle) * radius;
-            treeGroup.position.z = Math.sin(angle) * radius;
-            treeGroup.rotation.y = Math.random() * Math.PI * 2;
-            
-            // Vary tree sizes more
-            const treeScale = 0.6 + Math.random() * 0.8;  // More size variation
-            treeGroup.scale.set(treeScale, treeScale * (0.9 + Math.random() * 0.2), treeScale);
-            
-            // Add physics body for the tree
-            const treeShape = new CANNON.Cylinder(0.5 * treeScale, 0.5 * treeScale, 4 * treeScale);
+            // Add tree to scene
+            this.trees.add(treeGroup);
+            treeGroup.userData.isTree = true;
+
+            // Create physics body for the tree
+            const treeShape = new CANNON.Cylinder(0.5, 0.8, 8, 8);
             const treeBody = new CANNON.Body({
                 mass: 0,
                 shape: treeShape,
-                position: new CANNON.Vec3(treeGroup.position.x, 2 * treeScale, treeGroup.position.z)
+                position: new CANNON.Vec3(x, y + 4, z)
             });
             this.physicsWorld.addBody(treeBody);
-            
-            this.trees.add(treeGroup);
+
+            // Store tree data
+            this.treeData.set(treeGroup, {
+                health: 5, // 5 hits to destroy
+                physicsBody: treeBody
+            });
         }
-        
+
         this.scene.add(this.trees);
     }
 
@@ -471,14 +411,187 @@ export class World {
         this.scene.add(bushes);
     }
 
-    public update(deltaTime?: number): void {
-        // Update physics with smaller, fixed timestep
-        const fixedTimeStep = 1/60;
-        const maxSubSteps = 3;
-        this.physicsWorld.step(fixedTimeStep, deltaTime || 1/60, maxSubSteps);
+    public update(deltaTime: number): void {
+        // Update physics world
+        this.physicsWorld.step(1/60, deltaTime, 3);
     }
 
     public getPhysicsWorld(): CANNON.World {
         return this.physicsWorld;
+    }
+
+    public getTreeCount(): number {
+        return this.treeData.size;
+    }
+
+    public getTreesGroup(): THREE.Group {
+        return this.trees;
+    }
+
+    public handleTreeHit(treeObject: THREE.Object3D, hitPoint: THREE.Vector3): number {
+        console.log('handleTreeHit called with:', {
+            treeObject,
+            hitPoint,
+            hasTreeData: this.treeData.has(treeObject),
+            treeDataSize: this.treeData.size,
+            treeUserData: treeObject.userData,
+            treeChildren: treeObject.children.map(child => ({
+                type: child.type,
+                userData: child.userData
+            }))
+        });
+
+        const data = this.treeData.get(treeObject);
+        if (!data) {
+            console.error('No tree data found for object:', {
+                treeObject,
+                allTreeData: Array.from(this.treeData.entries()).map(([obj, data]) => ({
+                    objectId: obj.uuid,
+                    health: data.health
+                }))
+            });
+            return 0;
+        }
+
+        // Create hit effect
+        this.createHitEffect(hitPoint);
+
+        // Reduce tree health
+        data.health--;
+        console.log('Tree health reduced to:', {
+            health: data.health,
+            treeId: treeObject.uuid
+        });
+        
+        // If tree is destroyed
+        if (data.health <= 0) {
+            console.log('Tree destroyed, cleaning up...', {
+                treeId: treeObject.uuid,
+                position: treeObject.position
+            });
+            // Remove tree from scene and physics world
+            treeObject.removeFromParent();
+            this.physicsWorld.removeBody(data.physicsBody);
+            this.treeData.delete(treeObject);
+
+            // Create destruction effect
+            this.createDestructionEffect(treeObject.position);
+        } else {
+            // Shake the tree
+            this.shakeTree(treeObject);
+        }
+
+        // Return wood amount (10 per hit)
+        return 10;
+    }
+
+    private createHitEffect(position: THREE.Vector3): void {
+        // Create particles for hit effect
+        const particleCount = 10;
+        const particles = new THREE.Group();
+        
+        for (let i = 0; i < particleCount; i++) {
+            const particle = new THREE.Mesh(
+                new THREE.BoxGeometry(0.1, 0.1, 0.1),
+                new THREE.MeshBasicMaterial({ color: 0x4a2810 })
+            );
+            
+            particle.position.copy(position);
+            particles.add(particle);
+            
+            // Random velocity
+            const velocity = new THREE.Vector3(
+                (Math.random() - 0.5) * 2,
+                Math.random() * 2,
+                (Math.random() - 0.5) * 2
+            );
+            
+            // Animate particle
+            const animate = () => {
+                particle.position.add(velocity);
+                velocity.y -= 0.1; // Gravity
+                
+                particle.scale.multiplyScalar(0.95); // Shrink
+                
+                if (particle.scale.x < 0.01) {
+                    particles.remove(particle);
+                    if (particles.children.length === 0) {
+                        this.scene.remove(particles);
+                    }
+                } else {
+                    requestAnimationFrame(animate);
+                }
+            };
+            
+            requestAnimationFrame(animate);
+        }
+        
+        this.scene.add(particles);
+    }
+
+    private createDestructionEffect(position: THREE.Vector3): void {
+        // Create larger particles for tree destruction
+        const particleCount = 20;
+        const particles = new THREE.Group();
+        
+        for (let i = 0; i < particleCount; i++) {
+            const particle = new THREE.Mesh(
+                new THREE.BoxGeometry(0.2, 0.2, 0.2),
+                new THREE.MeshBasicMaterial({ color: 0x4a2810 })
+            );
+            
+            particle.position.copy(position);
+            particles.add(particle);
+            
+            // Random velocity with more spread
+            const velocity = new THREE.Vector3(
+                (Math.random() - 0.5) * 4,
+                Math.random() * 4,
+                (Math.random() - 0.5) * 4
+            );
+            
+            // Animate particle
+            const animate = () => {
+                particle.position.add(velocity);
+                velocity.y -= 0.1; // Gravity
+                
+                particle.scale.multiplyScalar(0.95); // Shrink
+                particle.rotateX(0.1);
+                particle.rotateY(0.1);
+                
+                if (particle.scale.x < 0.01) {
+                    particles.remove(particle);
+                    if (particles.children.length === 0) {
+                        this.scene.remove(particles);
+                    }
+                } else {
+                    requestAnimationFrame(animate);
+                }
+            };
+            
+            requestAnimationFrame(animate);
+        }
+        
+        this.scene.add(particles);
+    }
+
+    private shakeTree(treeObject: THREE.Object3D): void {
+        const originalRotation = treeObject.rotation.clone();
+        const shakeAmount = 0.1;
+        let time = 0;
+        
+        const animate = () => {
+            time += 0.1;
+            treeObject.rotation.x = originalRotation.x + Math.sin(time) * shakeAmount;
+            treeObject.rotation.z = originalRotation.z + Math.cos(time) * shakeAmount;
+            
+            if (time > Math.PI * 2) {
+                treeObject.rotation.copy(originalRotation);
+            } else {
+                requestAnimationFrame(animate);
+            }
+        };
+        
+        requestAnimationFrame(animate);
     }
 } 
