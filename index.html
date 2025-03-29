@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fortnite Clone - Three.js</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+      }
+      canvas {
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+      #ui-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+      #health-bar {
+        position: fixed;
+        bottom: 20px;
+        left: 20px;
+        background: rgba(0, 0, 0, 0.5);
+        padding: 10px;
+        border-radius: 5px;
+        color: white;
+        font-family: Arial, sans-serif;
+      }
+      #resources {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: rgba(0, 0, 0, 0.5);
+        padding: 10px;
+        border-radius: 5px;
+        color: white;
+        font-family: Arial, sans-serif;
+      }
+      #player-count {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: rgba(0, 0, 0, 0.5);
+        padding: 10px;
+        border-radius: 5px;
+        color: white;
+        font-family: Arial, sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="ui-overlay">
+      <div id="health-bar">Health: 100</div>
+      <div id="resources">Wood: 0</div>
+      <div id="player-count">Players: 50</div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html> 
